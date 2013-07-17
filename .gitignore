@@ -1,0 +1,9 @@
+*.pyc
+*.so
+.coverage*
+build
+coverage.html
+dist
+clblob.egg-info
+test_blob
+test_blob_data

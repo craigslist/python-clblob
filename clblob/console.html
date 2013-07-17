@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>craigslist blob console</title>
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+        <link rel="icon" href="_favicon.ico" />
+        <style type="text/css">
+
+body {
+    margin: 0px;
+    padding: 0px;
+    background-color: #ffffff;
+    font-family: Verdana, Arial, sans-serif;
+    font-size: 80%;
+    text-align: center;
+}
+
+h1 {
+    margin: 0px;
+    padding: 0px;
+    color: #551A8B;
+    font-size: 300%;
+}
+
+#header, #grid, #summary, #main {
+    margin: 0px auto;
+    padding: 0px;
+}
+
+div.group {
+    margin: 0px;
+    padding: 0px;
+    overflow: auto;
+}
+
+div.hide {
+    display: none;
+}
+
+div.button, .clickable {
+    cursor: pointer;
+}
+
+div.grid_cluster, div.grid_bucket, div.grid_bucket_number, div.grid_replica,
+div.cluster, div.bucket, div.replica, #summary,
+div.name, div.button, div.metric {
+    margin: 1px;
+    padding: 2px;
+    border-radius: 3px;
+    -moz-border-radius: 3px;
+    -webkit-border-radius: 3px;
+}
+
+div.grid_cluster, div.grid_bucket {
+    padding: 0px;
+    float: left;
+}
+
+div.grid_bucket_number, div.grid_replica {
+    width: 15px;
+    height: 15px;
+    margin: 1px;
+}
+
+div.grid_bucket_number {
+    font-size: 80%;
+    border: 1px solid #ffffff;
+    background-color: #ffffff;
+}
+
+div.grid_replica {
+    border: 1px solid #000000;
+    background-color: #000000;
+}
+
+div.cluster {
+    border: 1px solid #80a040;
+    background-color: #e0ffa0;
+}
+
+div.cluster div.name {
+    border: 1px solid #e0ffa0;
+}
+
+div.bucket {
+    border: 1px solid #40a040;
+    background-color: #a0ffa0;
+}
+
+div.bucket div.name {
+    border: 1px solid #a0ffa0;
+}
+
+div.replica, #summary {
+    border: 1px solid #4080a0;
+    background-color: #a0e0ff;
+}
+
+div.replica div.name {
+    border: 1px solid #a0e0ff;
+}
+
+div.name {
+    float: left;
+}
+
+div.button {
+    border: 1px solid #404040;
+    background-color: #a0a0a0;
+    float: left;
+}
+
+div.metric {
+    border: 1px solid #808080;
+    background-color: #e0e0e0;
+    float: left;
+}
+
+div.ok {
+    border: 1px solid #008000 !important;
+    background-color: #00ff00 !important;
+}
+
+div.warning {
+    border: 1px solid #808000 !important;
+    background-color: #ffff00 !important;
+}
+
+div.critical {
+    border: 1px solid #800000 !important;
+    background-color: #ff0000 !important;
+}
+
+div.updating {
+    border: 1px solid #a04000 !important;
+    background-color: #ffa000 !important;
+}
+
+        </style>
+        <script src="_jquery.js"></script>
+        <script>
+
+$(document).ready(get_config);
+
+function get_config() {
+    $.getJSON('/_config', update_config);
+}
+
+var config;
+var refresh_replicas = [];
+var refresh_timer;
+var refresh_auto_ms = 60000;
+var keypress_max_ms = 1000;
+var last_keypress = 0;
+var running_status = 0;
+var queued_status = [];
+
+function update_config(data) {
+    config = data;
+    var grid = '';
+    var main = '';
+    var clusters = config.clblob.client.clusters;
+
+    grid += '<div class="group">';
+    for (var cluster = 0; cluster < clusters.length; cluster++) {
+        grid += '<div class="grid_cluster">' +
+            '<div class="group">' +
+            '<div class="name"><b>cluster ' + cluster + '</b></div>' +
+            '</div>' +
+            '<div class="group">';
+
+        main += '<div id="cluster_' + cluster + '" class="cluster">' +
+            '<div class="group">' +
+            '<div class="name"><b>cluster ' + cluster + '</b></div>' +
+            '</div>';
+
+        var buckets = clusters[cluster];
+        for (var bucket = 0; bucket < buckets.length; bucket++) {
+            grid += '<div class="grid_bucket">' +
+                '<div class="grid_bucket_number">' + bucket + '</div>';
+
+            main += '<div id="bucket_' + cluster + '_' + bucket +
+                '" class="bucket">' +
+                '<div class="group clickable" onclick="' +
+                '$(this).siblings(\'div.replica\').toggleClass(\'hide\');">' +
+                '<div class="name"><b>bucket ' + bucket + '</b></div>' +
+                metric('write weight', buckets[bucket].write_weight, 0, 0,
+                    null, 0);
+
+            var replicas = buckets[bucket].replicas;
+            var replica_main = '';
+            for (var replica = 0; replica < replicas.length; replica++) {
+                grid += '<a href="#bucket_' + cluster + '_' + bucket + '" ' +
+                    'onclick="$(\'#replica_' + replicas[replica] + '\')' +
+                    '.parent().children(\'div.replica\')' +
+                    '.removeClass(\'hide\');">' +
+                    '<div id="grid_replica_' + replicas[replica] +
+                    '" class="grid_replica" title="' + replicas[replica] +
+                    '"></div></a>';
+
+                main += '<div class="metric replica_name_' + replicas[replica] +
+                    '"><b>' + replicas[replica] + '</b></div>';
+
+                replica_main += '<div id="replica_' + replicas[replica] +
+                    '" class="replica">' +
+                    '<div class="group">' +
+                    '<div class="name replica_name_' + replicas[replica] +
+                    '"><b>' + replicas[replica] + '</b></div>' +
+                    '</div></div>';
+
+                refresh_replicas.push(replicas[replica]);
+            }
+            grid += '</div>';
+            main += '</div>' + replica_main + '</div>';
+        }
+        grid += '</div></div>';
+        main += '</div>';
+    }
+    grid += '</div>';
+
+    $('#grid').html(grid);
+    $('#main').html(main);
+    $('div.replica').addClass('hide');
+    $(document).keypress(handle_keypress);
+    refresh();
+}
+
+function foreach_replica(callback, filter) {
+    for (var index = 0; index < refresh_replicas.length; index++) {
+        replica = refresh_replicas[index];
+        if (filter === true) {
+            if ($('#replica_' + replica).hasClass('hide'))
+                continue;
+        }
+        else if (filter && filter != replica)
+            continue;
+        callback(replica);
+    }
+}
+
+function handle_keypress(event) {
+    if (event.ctrlKey)
+        return;
+    if (event.which == 104) {
+        $('div.replica').addClass('hide');
+        return;
+    }
+    if (event.which == 72) {
+        $('div.replica').removeClass('hide');
+        return;
+    }
+    var url;
+    var upper_key = event.which & 95;
+    var filter = event.which == 32 || event.which >= 97;
+    if (upper_key == 82 || event.which == 32)
+        url = null;
+    if (upper_key == 66)
+        url = '/_buffer/';
+    if (upper_key == 80)
+        url = '/_purge/';
+    if (upper_key == 83)
+        url = '/_sync/';
+    if (url === undefined)
+        return;
+
+    event.preventDefault();
+
+    var current = Math.round(new Date().getTime() / keypress_max_ms);
+    if (current == last_keypress)
+        return;
+    last_keypress = current;
+
+    if (url != null) {
+        foreach_replica(function (replica) {
+            $.ajax({url: url + replica, type: "GET", timeout: 1000});
+        }, filter);
+    }
+    else
+        refresh(filter);
+}
+
+function flush_status() {
+    while (running_status < 8) {
+        replica = queued_status.shift();
+        if (!replica)
+            break;
+        running_status++;
+        $('#grid_replica_' + replica).addClass('updating');
+        $('div.replica_name_' + replica).addClass('updating');
+        $.ajax({
+            url: '/_status/' + replica,
+            type: "GET",
+            dataType: "json",
+            timeout: 1000,
+            success: update_status(replica),
+            error: update_status_fail(replica)});
+    }
+}
+
+function refresh(filter) {
+    if (!filter && refresh_timer)
+        window.clearTimeout(refresh_timer);
+    foreach_replica(function (replica) { queued_status.push(replica); },
+        filter);
+    flush_status();
+    if (!filter) {
+        refresh_timer = window.setTimeout(function () { refresh(); },
+            refresh_auto_ms);
+    }
+}
+
+var summary = {
+    'cluster events': {
+        'critical': 10000,
+        'factor': 1000,
+        'type': 'metric',
+        'values': {},
+        'warning': 1000},
+    'disk inodes': {
+        'factor': 1000,
+        'type': 'usage',
+        'values': {}},
+    'disk space': {
+        'factor': 1024,
+        'type': 'usage',
+        'values': {}},
+    'replica events': {
+        'critical': 10000,
+        'factor': 1000,
+        'type': 'metric',
+        'values': {},
+        'warning': 1000}};
+
+function update_summary() {
+    var html = '';
+    html += '<div class="group">';
+    html += '<div class="name"><b>summary</b></div>';
+    html += iterate_sorted_object(summary, summary_metrics);
+    html += '</div>';
+    $('#summary').html(html);
+}
+
+function summary_metrics(name, details) {
+    var usage = 0;
+    var total = 0;
+    var count = 0;
+    for (replica in details['values']) {
+        count++;
+        if (details['type'] == 'usage') {
+            usage += details['values'][replica][0];
+            total += details['values'][replica][1];
+        }
+        else
+            total += details['values'][replica];
+    }
+    if (count == 0)
+        return '';
+    if (details['type'] == 'usage')
+        return usage_metric(name, total, usage, 60, 80, details['factor']);
+    return metric(name, total, details['warning'], details['critical'],
+        details['factor']);
+}
+
+var replica_status;
+
+function update_status(replica) {
+    return function (status) {
+        flush_status();
+        running_status--;
+        replica_status = 'ok';
+        var html = '';
+        var address = config.clblob.client.replicas[replica].ip + ':' +
+            config.clblob.client.replicas[replica].port;
+        html += '<div class="group">';
+        html += '<div class="name replica_name_' + replica + '"><b>' +
+            replica + '</b></div>';
+        html += button(address, 'http://' + address + '/_console');
+        html += '<div class="button" onclick="refresh(\'' + replica +
+            '\');"><b>refresh</b></div>';
+        html += '</div>';
+        html += '<div class="group">';
+        html += button('sync', '/_sync/' + replica, true);
+        html += metric('sync status', status.sync_status, 0, 0, null, 0);
+        html += button('purge', '/_purge/' + replica, true);
+        html += metric('purge status', status.purge_status, 0, 0, null, 0);
+        html += button('buffer', '/_buffer/' + replica, true);
+        html += metric('buffer status', status.buffer_status, 0, 0, null, 0);
+        html += '</div>';
+        html += '<div class="group">';
+        summary['replica events']['values'][replica] = 0;
+        html += iterate_sorted_object(status.replicas,
+            replica_metrics(replica));
+        summary['cluster events']['values'][replica] = 0;
+        html += iterate_sorted_object(status.clusters,
+            cluster_metrics(replica));
+        html += '</div>';
+
+        html += '<div class="group">';
+        html += iterate_sorted_object(status.events, event_metrics);
+        html += '</div>';
+
+        if ('index_sqlite' in status) {
+            html += '<div class="group">';
+            html += index_sqlite_metrics(replica, status.index_sqlite);
+            html += '</div>';
+        }
+
+        if ('store_disk' in status) {
+            html += '<div class="group">';
+            html += store_disk_metrics(replica, status.store_disk);
+            html += '</div>';
+        }
+
+        $('#replica_' + replica).html(html);
+        $('#replica_' + replica).removeClass('warning');
+        update_replica_status(replica, replica_status);
+        update_summary();
+    }
+}
+
+function update_replica_status(replica, replica_status) {
+    $('#grid_replica_' + replica).removeClass().addClass(
+        'grid_replica ' + replica_status);
+    $('div.replica_name_' + replica).removeClass().addClass(
+        'name replica_name_' + replica + ' ' + replica_status);
+}
+
+function index_sqlite_metrics(replica, status) {
+    var html = '';
+    html += metric('sqlite database', status.database);
+    html += usage_metric('sqlite size', status.max_size, status.size, 60, 80,
+        1024);
+    html += metric('sqlite queue size', status.queue_size, 10, 20);
+    return html;
+}
+
+function store_disk_metrics(replica, status) {
+    var html = '';
+    html += metric('disk path', status.path);
+    html += usage_metric('disk space', status.total_space,
+        status.total_space - status.free_space, 60, 80, 1024);
+    summary['disk space']['values'][replica] = 
+        [status.total_space - status.free_space, status.total_space];
+    html += usage_metric('disk inodes', status.total_inodes,
+        status.total_inodes - status.free_inodes, 60, 80, 1000);
+    summary['disk inodes']['values'][replica] = 
+        [status.total_inodes - status.free_inodes, status.total_inodes];
+    html += metric('disk queue size', status.queue_size, 10, 20);
+    return html;
+}
+
+function replica_metrics(summary_replica) {
+    return function (replica, status) {
+        var html = '';
+        if ('events' in status) {
+            html += metric(replica + ' events',
+                status.buffer_events + '/' + status.events,
+                config.clblob.client.replica_event_buffer_size,
+                config.clblob.client.replica_event_buffer_size * 10, 1000,
+                status.events);
+            summary['replica events']['values'][summary_replica] += status.events;
+        }
+        var replica_retry = config.clblob.client.replica_retry;
+        if ('last_failed' in status && status.last_failed < replica_retry) {
+            html += metric(replica + ' failed', status.last_failed,
+                replica_retry, 0, null);
+        }
+        return html;
+    }
+}
+
+function cluster_metrics(replica) {
+    return function (cluster, status) {
+        var html = '';
+        if ('events' in status) {
+            html += metric('cluster ' + cluster + ' events',
+                status.buffer_events + '/' + status.events,
+                config.clblob.client.cluster_event_buffer_size,
+                config.clblob.client.cluster_event_buffer_size * 10, 1000,
+                status.events);
+            summary['cluster events']['values'][replica] += status.events;
+        }
+        return html;
+    }
+}
+
+function event_metrics(event, status) {
+    return metric(event + ' events',
+        status.current + '/' + status.max + '/' + si_prefix(status.total), 250,
+        500, 1000, status.current)
+}
+
+function update_status_fail(replica) {
+    return function (data) {
+        flush_status();
+        running_status--;
+        var html = '';
+        var address = config.clblob.client.replicas[replica].ip + ':' +
+            config.clblob.client.replicas[replica].port;
+        html += '<div class="group">' +
+            '<div class="name replica_name_' + replica + '"><b>' + replica +
+            '</b></div>' +
+            button(address, 'http://' + address + '/_console') +
+            metric('failed', data.statusText, 0, 0, null, 1) +
+            '</div>';
+
+        $('#replica_' + replica).html(html);
+        $('#replica_' + replica).addClass('warning');
+        update_replica_status(replica, 'critical');
+    }
+}
+
+function button(name, url, background) {
+    if (background) {
+        return '<div class="button" onclick="' +
+            "$.ajax({url: '" + url + "', type: 'GET', timeout: 1000});" +
+            '"><b>' + name + '</b></div>';
+    }
+    return '<div class="button" onclick="' +
+        "location.href='" + url + "'" +
+        '"><b>' + name + '</b></div>';
+}
+
+function metric(name, value, warning, critical, factor, notify_value) {
+    if (notify_value === undefined)
+        notify_value = value;
+    var notify = get_notify_class(notify_value, warning, critical);
+    return '<div class="metric' + notify + '"><b>' + name + ':</b> ' +
+        si_prefix(value, factor) + '</div>';
+}
+
+function usage_metric(name, total, used, warning, critical, factor) {
+    var used_percent = Math.round((used / total) * 100);
+    return metric(name, si_prefix(used, factor) + '/' +
+        si_prefix(total, factor) + ' (' + used_percent + '%)', warning,
+        critical, null, used_percent);
+}
+
+function iterate_sorted_object(key_values, callback) {
+    var keys = [];
+    for (key in key_values)
+        keys.push(key);
+    keys.sort();
+    var html = '';
+    for (key in keys) {
+        key = keys[key];
+        html += callback(key, key_values[key]);
+    }
+    return html;
+}
+
+function get_notify_class(value, warning, critical) {
+    if (warning > critical) {
+        if (value < critical) {
+            replica_status = 'critical';
+            return ' critical';
+        }
+        else if (value < warning) {
+            if (replica_status != 'critical')
+                replica_status = 'warning';
+            return ' warning';
+        }
+    }
+    else {
+        if (value > critical) {
+            replica_status = 'critical';
+            return ' critical';
+        }
+        else if (value > warning) {
+            if (replica_status != 'critical')
+                replica_status = 'warning';
+            return ' warning';
+        }
+    }
+    return '';
+}
+
+SI_PREFIXES_LARGE = ['', 'k', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y'];
+SI_PREFIXES_SMALL = ['', 'm', 'u', 'n', 'p', 'f', 'a', 'z', 'y'];
+
+function si_prefix(value, factor) {
+    if (factor === null)
+        return value;
+    if (factor === undefined)
+        factor = 1000;
+    var prefix = 0;
+    if (value >= 1) {
+        while (Math.round(value) >= factor) {
+            value /= factor;
+            prefix++;
+        }
+        prefix = SI_PREFIXES_LARGE[prefix];
+    }
+    else if (value > 0) {
+        while (value < 1) {
+            value *= factor;
+            prefix++;
+        }
+        prefix = SI_PREFIXES_SMALL[prefix];
+    }
+    else
+        return value;
+    var adjust = Math.pow(10, 3 - Math.round(value).toString().length);
+    adjust = Math.max(1, adjust);
+    return (Math.round(value * adjust) / adjust) + prefix;
+}
+
+        </script>
+    </head>
+    <body>
+        <div id="header">
+            <h1>&#9774; craigslist blob console</h1>
+            <a class="clickable" onclick="$('#help').toggleClass('hide');">
+                <b>Click here to toggle help</b>
+            </a>
+        </div>
+        <div id="help" class="hide">
+            <h2>Metrics:</h2>
+            <div><b>replica &amp; cluster events</b> - &lt;buffered&gt;/&lt;total&gt;</div>
+            <div><b>other events</b> - &lt;current&gt;/&lt;max&gt;/&lt;total&gt;</div>
+            <h2>Keyboard shortcuts:</h2>
+            <div><b>b</b> - Run buffer on visible replicas</div>
+            <div><b>B</b> - Run buffer on all replicas</div>
+            <div><b>h</b> - Hide all replicas</div>
+            <div><b>H</b> - Show all replicas</div>
+            <div><b>p</b> - Run purge on visible replicas</div>
+            <div><b>P</b> - Run purge on all replicas</div>
+            <div><b>r or &lt;space&gt;</b> - Refresh visible replicas</div>
+            <div><b>R</b> - Refresh all replicas</div>
+            <div><b>s</b> - Run sync on visible replicas</div>
+            <div><b>S</b> - Run sync on all replicas</div>
+        </div>
+        <div id="grid"></div>
+        <div id="summary"></div>
+        <div id="main"></div>
+    </body>
+</html>
