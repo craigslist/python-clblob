@@ -176,14 +176,6 @@ import random
 import time
 
 
-def unique_id():
-    '''Generate a unique time-based 64 bit integer ID.'''
-    now = time.time()
-    seconds = int(now)
-    micros = int((now - seconds) * 1000000)
-    return (seconds << 32) + (micros << 12) + random.randrange(4096)
-
-
 class NotFound(Exception):
     '''Exception raised when a blob is not found.'''
 

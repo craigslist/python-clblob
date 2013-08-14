@@ -29,9 +29,9 @@ import errno
 import os
 import sqlite3
 
-import clblob
 import clcommon.config
 import clcommon.log
+import clcommon.number
 import clcommon.worker
 
 DEFAULT_CONFIG = {
@@ -247,7 +247,7 @@ class Index(object):
         events = []
         for replica in event.replicas():
             replica_id = self._replica_ids[replica]
-            rowid = clblob.unique_id()
+            rowid = clcommon.number.unique64()
             self._database.execute(
                 '''INSERT INTO replica_event (rowid, replica, blob, flags)
                 VALUES (?, ?, ?, ?)''',
@@ -310,7 +310,7 @@ class Index(object):
         for cluster, bucket in event.buckets().iteritems():
             if self._client.cluster == cluster:
                 continue
-            rowid = clblob.unique_id()
+            rowid = clcommon.number.unique64()
             self._database.execute(
                 '''INSERT INTO cluster_event
                 (rowid, cluster, bucket, blob, flags)

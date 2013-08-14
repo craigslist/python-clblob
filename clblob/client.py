@@ -48,6 +48,7 @@ import clblob.event
 import clcommon.config
 import clcommon.http
 import clcommon.log
+import clcommon.number
 import clcommon.worker
 
 DEFAULT_CONFIG = {
@@ -326,7 +327,7 @@ class Client(object):
         name = self._check_name(name)
         event = clblob.event.Delete(self, name, replicate)
         event.deleted = self._make_deleted(ttl, deleted)
-        modified_deleted = modified_deleted or clblob.unique_id()
+        modified_deleted = modified_deleted or clcommon.number.unique64()
         event.modified_deleted = modified_deleted
         return self._update(event)
 
@@ -387,7 +388,7 @@ class Client(object):
                 type(data))
         event = clblob.event.Put(self, name, replicate, encoded)
         event.data = data
-        event.modified = modified or clblob.unique_id()
+        event.modified = modified or clcommon.number.unique64()
         event.deleted = self._make_deleted(ttl, deleted)
         event.modified_deleted = modified_deleted or event.modified
         return self._update(event)
