@@ -62,7 +62,6 @@ DEFAULT_CONFIG = {
             'cluster': None,
             'cluster_event_buffer_size': 100,
             'cluster_event_retry': 1,
-            'cluster_event_timeout': 5,
             'cluster_pool_size': 4,
             'clusters': [],
             'encode_name': True,
@@ -76,7 +75,6 @@ DEFAULT_CONFIG = {
             'replica_cached_connections': 10,
             'replica_event_buffer_size': 100,
             'replica_event_retry': 1,
-            'replica_event_timeout': 5,
             'replica_pool_size': 2,
             'replica_retry': 10,
             'replicas': {},
@@ -1114,6 +1112,7 @@ class Client(object):
                     event.profile.mark_time('%s:request' % replica)
                     response = connection.getresponse()
                 except Exception, exception:
+                    event.profile.mark_time('%s:fail' % replica)
                     if not cached:
                         raise
                     cached = False
