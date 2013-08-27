@@ -37,9 +37,7 @@ to query status information for each replica using the same HTTP calls that
 the server/client system uses to manage the blob service. After starting
 the server visit /_console on the server host and port to view it.'''
 
-import json
 import os.path
-import mimetypes
 
 import clblob.client
 import clcommon.config
@@ -68,19 +66,7 @@ class Request(clcommon.http.Request):
             name, body = self._run_admin(name[1:])
         else:
             name, body = self._run(name)
-        if hasattr(body, 'read') or isinstance(body, basestring):
-            content_type = mimetypes.guess_type(name)
-            if content_type[0] is None:
-                content_type = 'application/octet-stream'
-            else:
-                content_type = content_type[0]
-            self.headers.append(('Content-type', content_type))
-            if hasattr(body, 'content_length'):
-                self.headers.append(('Content-Length', body.content_length))
-        else:
-            body = json.dumps(body, indent=4, sort_keys=True)
-            self.headers.append(('Content-type', 'application/json'))
-        return self.ok(body)
+        return self.ok(self.set_content(name, body))
 
     def _run(self, name):
         '''Run a command.'''

@@ -172,9 +172,6 @@ gettext.install('clblob')
 
 __version__ = '0'
 
-import random
-import time
-
 
 class NotFound(Exception):
     '''Exception raised when a blob is not found.'''
