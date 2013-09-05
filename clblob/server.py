@@ -115,6 +115,8 @@ class Request(clcommon.http.Request):
                 ['modified_start', 'modified_stop', 'checksum_modulo'],
                 ['checksum'])
             body = self.server.blob_client.list(parts[1], **kwargs)
+        elif parts[0] == 'logstatus':
+            body = self.server.blob_client.logstatus(parts[1])
         elif parts[0] == 'purge':
             body = self.server.blob_client.purge(parts[1])
         elif parts[0] == 'status':

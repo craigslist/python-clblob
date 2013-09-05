@@ -467,6 +467,10 @@ class TestClient(test.Base):
         self.assertNotEquals([], client.list('010'))
         self.assertNotEquals([], client.list('010', checksum=False))
 
+    def test_logstatus(self):
+        client = clblob.client.Client(self.config)
+        self.assertEquals(dict(queued=True), client.logstatus('010'))
+
     def test_purge(self):
         client = clblob.client.Client(self.config)
         client.put(NAME, 'purge me')

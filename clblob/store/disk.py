@@ -229,6 +229,16 @@ class Store(object):
         '''Abort a pending put command for an event.'''
         self._run(self._delete, event)
 
+    @staticmethod
+    def logstatus(event, status):
+        '''Mark metrics for the store.'''
+        status = status['store_disk']
+        event.profile.mark('store_disk_queue_size', status['queue_size'])
+        usage = 1 - float(status['free_space']) / status['total_space']
+        event.profile.mark('store_disk_usage', int(100 * usage))
+        usage = 1 - float(status['free_inodes']) / status['total_inodes']
+        event.profile.mark('store_disk_inode_usage', int(100 * usage))
+
     def status(self, event, status):
         '''Get status info for the store.'''
         status['store_disk'] = {}

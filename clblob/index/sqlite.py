@@ -432,6 +432,14 @@ class Index(object):
         self._database.execute('DELETE FROM blob WHERE rowid IN (%s)' %
             ','.join(str(rowid) for rowid, _name in expired))
 
+    @staticmethod
+    def logstatus(event, status):
+        '''Mark metrics for the index.'''
+        status = status['index_sqlite']
+        event.profile.mark('index_sqlite_queue_size', status['queue_size'])
+        event.profile.mark('index_sqlite_index_usage',
+            int(100 * float(status['size']) / status['max_size']))
+
     def status(self, event, status):
         '''Get status info for the index.'''
         status['index_sqlite'] = {}

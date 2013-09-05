@@ -97,7 +97,8 @@ class TestServer(test.Base):
         self.assertEquals('text/html', response.getheader('Content-Type'))
 
     def test_admin(self):
-        for command in ['buffer', 'list', 'purge', 'status', 'sync']:
+        for command in ['buffer', 'list', 'logstatus', 'purge', 'status',
+                'sync']:
             response = request('GET', '/_%s' % command)
             self.assertEquals(200, response.status)
             self.assertEquals('application/json',

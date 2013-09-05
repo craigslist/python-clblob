@@ -68,6 +68,8 @@ DEFAULT_CONFIG = {
             'expiration_delay': 86400,
             'index_module': 'sqlite',
             'log_level': 'NOTSET',
+            'logstatus_interval': 60,
+            'logstatus_start_delay': 60,
             'purge_batch_size': 100,
             'purge_interval': 60,
             'purge_start_delay': 900,
@@ -178,7 +180,7 @@ class Client(object):
             'status': 'start delay',
             'queue': clcommon.worker.HybridQueue(),
             'thread': clcommon.worker.Pool(1, True)})
-            for name in ['buffer', 'purge', 'sync'])
+            for name in ['buffer', 'logstatus', 'purge', 'sync'])
         for name, worker in self._workers.iteritems():
             if name == 'sync':
                 default_event = lambda: clblob.event.Sync(self)
@@ -842,6 +844,33 @@ class Client(object):
         if self.replica != event.replica:
             return self._request(event.replica, event)
         return self._index.list(event)
+
+    def logstatus(self, replica=None):
+        '''Queue a log status event.'''
+        event = clblob.event.Admin(self, 'logstatus', replica)
+        if self.replica != event.replica:
+            return self._request(event.replica, event)
+        if self._workers['logstatus']['queue'].qsize() == 0:
+            self._workers['logstatus']['queue'].put(event)
+            return dict(queued=True)
+        return dict(queued=False)
+
+    def _logstatus(self, event):
+        '''Mark all status metrics for logging purposes.'''
+        status = self.status()
+        for replica, replica_status in status['replicas'].iteritems():
+            if 'events' in replica_status:
+                event.profile.mark('%s:replica_event_count' % replica,
+                    replica_status['events'])
+        for cluster, cluster_status in status['clusters'].iteritems():
+            if 'events' in cluster_status:
+                event.profile.mark('%s:cluster_event_count' % cluster,
+                    cluster_status['events'])
+        for event_type, event_status in status['events'].iteritems():
+            event.profile.mark('%s:event_count' % event_type,
+                event_status['current'])
+        self._store.logstatus(event, status)
+        self._index.logstatus(event, status)
 
     def purge(self, replica=None):
         '''Queue request to delete any blobs that have expired. Each
