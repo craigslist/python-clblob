@@ -357,7 +357,7 @@ class TestClient(test.Base):
             self.assertRaises(clblob.RequestError, client.get, name)
         for server in replicas:
             self.servers[server].start()
-        for _count in xrange(3):
+        for _count in xrange(5):
             for server in replicas:
                 client.buffer(server)
             time.sleep(0.2)

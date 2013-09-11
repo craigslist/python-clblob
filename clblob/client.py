@@ -54,6 +54,7 @@ import clcommon.worker
 DEFAULT_CONFIG = {
     'clblob': {
         'client': {
+            'admin_timeout': 5,
             'bucket_count_mismatch_catastrophic': True,
             'buffer_interval': 3,
             'buffer_start_delay': 0,

@@ -205,7 +205,7 @@ class Admin(Event):
         elif replica not in client.config['replicas']:
             raise clblob.RequestError(_('Unknown replica: %s') % replica)
         super(Admin, self).__init__(client, method,
-            '_%s/%s' % (method, replica), client.config['request_timeout'],
+            '_%s/%s' % (method, replica), client.config['admin_timeout'],
             'GET')
         self.replica = replica
 
