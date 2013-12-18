@@ -22,7 +22,7 @@ h1 {
     font-size: 300%;
 }
 
-#header, #grid, #summary, #main {
+#header, #grid, #summary, #by_ip, #main {
     margin: 0px auto;
     padding: 0px;
 }
@@ -42,7 +42,7 @@ div.button, .clickable {
 }
 
 div.grid_cluster, div.grid_bucket, div.grid_bucket_number, div.grid_replica,
-div.cluster, div.bucket, div.replica, #summary,
+div.cluster, div.bucket, div.replica, div.ip, #summary,
 div.name, div.button, div.metric {
     margin: 1px;
     padding: 2px;
@@ -91,12 +91,12 @@ div.bucket div.name {
     border: 1px solid #a0ffa0;
 }
 
-div.replica, #summary {
+div.replica, div.ip, #summary {
     border: 1px solid #4080a0;
     background-color: #a0e0ff;
 }
 
-div.replica div.name {
+div.replica div.name, div.ip div.name {
     border: 1px solid #a0e0ff;
 }
 
@@ -136,6 +136,23 @@ div.updating {
     background-color: #ffa000 !important;
 }
 
+.hover_help {
+    top: 0px;
+    left: 0px;
+    padding: 3px;
+    border: 1px solid #000000;
+    background-color: #404040;
+    color: #ffffff;
+    display: none;
+    width: 300px;
+    position: fixed;
+    z-index: 100;
+}
+
+.hover_help_wrapper:hover .hover_help {
+    display: block;
+}
+
         </style>
         <script src="_jquery.js"></script>
         <script>
@@ -154,11 +171,14 @@ var keypress_max_ms = 1000;
 var last_keypress = 0;
 var running_status = 0;
 var queued_status = [];
+var replica_usage = {};
+var replica_timeout = 2000;
 
 function update_config(data) {
     config = data;
     var grid = '';
     var main = '';
+    var by_ip = {};
     var clusters = config.clblob.client.clusters;
 
     grid += '<div class="group">';
@@ -190,13 +210,14 @@ function update_config(data) {
             var replicas = buckets[bucket].replicas;
             var replica_main = '';
             for (var replica = 0; replica < replicas.length; replica++) {
-                grid += '<a href="#bucket_' + cluster + '_' + bucket + '" ' +
+                grid += hover_help(
+                    '<a href="#bucket_' + cluster + '_' + bucket + '" ' +
                     'onclick="$(\'#replica_' + replicas[replica] + '\')' +
                     '.parent().children(\'div.replica\')' +
                     '.removeClass(\'hide\');">' +
                     '<div id="grid_replica_' + replicas[replica] +
-                    '" class="grid_replica" title="' + replicas[replica] +
-                    '"></div></a>';
+                    '" class="grid_replica"></div></a>',
+                    replicas[replica]);
 
                 main += '<div class="metric replica_name_' + replicas[replica] +
                     '"><b>' + replicas[replica] + '</b></div>';
@@ -207,6 +228,12 @@ function update_config(data) {
                     '<div class="name replica_name_' + replicas[replica] +
                     '"><b>' + replicas[replica] + '</b></div>' +
                     '</div></div>';
+
+                var ip = config.clblob.client.replicas[replicas[replica]].ip;
+                var port = config.clblob.client.replicas[replicas[replica]].port;
+                if (!by_ip[ip])
+                    by_ip[ip] = {};
+                by_ip[ip][port] = replicas[replica];
 
                 refresh_replicas.push(replicas[replica]);
             }
@@ -219,10 +246,22 @@ function update_config(data) {
     grid += '</div>';
 
     $('#grid').html(grid);
+    $('#by_ip').html(iterate_sorted_object(by_ip, combine_ips));
     $('#main').html(main);
     $('div.replica').addClass('hide');
     $(document).keypress(handle_keypress);
     refresh();
+}
+
+function combine_ips(ip, ports) {
+    return '<div class="ip"><div class="group">' + '<div class="name"><b>ip ' +
+        ip + '</b></div>' + iterate_sorted_object(ports, combine_ports) +
+        '</div></div>';
+}
+
+function combine_ports(port, replica) {
+    return '<div class="metric replica_name_' + replica + '"><b>' + replica +
+        '</b></div>';
 }
 
 function foreach_replica(callback, filter) {
@@ -249,6 +288,10 @@ function handle_keypress(event) {
         $('div.replica').removeClass('hide');
         return;
     }
+    if (event.which == 73 || event.which == 105) {
+        $('#by_ip').toggleClass('hide');
+        return;
+    }
     var url;
     var upper_key = event.which & 95;
     var filter = event.which == 32 || event.which >= 97;
@@ -272,7 +315,7 @@ function handle_keypress(event) {
 
     if (url != null) {
         foreach_replica(function (replica) {
-            $.ajax({url: url + replica, type: "GET", timeout: 1000});
+            $.ajax({url: url + replica, type: "GET", timeout: replica_timeout});
         }, filter);
     }
     else
@@ -291,7 +334,7 @@ function flush_status() {
             url: '/_status/' + replica,
             type: "GET",
             dataType: "json",
-            timeout: 1000,
+            timeout: replica_timeout,
             success: update_status(replica),
             error: update_status_fail(replica)});
     }
@@ -300,7 +343,12 @@ function flush_status() {
 function refresh(filter) {
     if (!filter && refresh_timer)
         window.clearTimeout(refresh_timer);
-    foreach_replica(function (replica) { queued_status.push(replica); },
+    foreach_replica(function (replica) {
+        if (filter)
+            queued_status.unshift(replica);
+        else
+            queued_status.push(replica);
+        },
         filter);
     flush_status();
     if (!filter) {
@@ -315,21 +363,29 @@ var summary = {
         'factor': 1000,
         'type': 'metric',
         'values': {},
-        'warning': 1000},
+        'warning': 1000,
+        'help_text': 'The total number of events queued to a cluster across ' +
+            'all replicas.'},
     'disk inodes': {
         'factor': 1000,
         'type': 'usage',
-        'values': {}},
+        'values': {},
+        'help_text': 'The &lt;used&gt;/&lt;total&gt; number of disk inodes ' +
+            'across all replicas.'},
     'disk space': {
         'factor': 1024,
         'type': 'usage',
-        'values': {}},
+        'values': {},
+        'help_text': 'The &lt;used&gt;/&lt;total&gt; amount of disk space ' +
+            'across all replicas.'},
     'replica events': {
         'critical': 10000,
         'factor': 1000,
         'type': 'metric',
         'values': {},
-        'warning': 1000}};
+        'warning': 1000,
+        'help_text': 'The total number of events queued to a replica across ' +
+            'all replicas.'}};
 
 function update_summary() {
     var html = '';
@@ -356,9 +412,37 @@ function summary_metrics(name, details) {
     if (count == 0)
         return '';
     if (details['type'] == 'usage')
-        return usage_metric(name, total, usage, 60, 80, details['factor']);
-    return metric(name, total, details['warning'], details['critical'],
-        details['factor']);
+        return hover_help(
+            usage_metric(name, total, usage, 60, 80, details['factor']),
+            details['help_text']);
+    return hover_help(
+        metric(name, total, details['warning'], details['critical'],
+            details['factor']),
+        details['help_text']);
+}
+
+function update_replica_usage(cluster, bucket) {
+    var replicas = config.clblob.client.clusters[cluster][bucket].replicas;
+    var max_usage = 0;
+    for (var replica = 0; replica < replicas.length; replica++) {
+        if (max_usage < replica_usage[replicas[replica]])
+            max_usage = replica_usage[replicas[replica]];
+    }
+    if (max_usage == 0)
+        return;
+    for (var replica = 0; replica < replicas.length; replica++) {
+        var replica_name = replicas[replica];
+        if (replica_usage[replica_name] == undefined)
+            continue;
+        var relative = (replica_usage[replica_name] / max_usage) * 100;
+        var replica_object = $('.replica_name_' + replica_name);
+        replica_object.html('<b>' + replica_name +
+            ':</b> ' + Math.round(relative) + '%');
+        if (relative < 98 && !replica_object.hasClass('critical')) {
+            $('#grid_replica_' + replica_name).addClass('warning');
+            replica_object.addClass('warning');
+        }
+    }
 }
 
 var replica_status;
@@ -379,12 +463,25 @@ function update_status(replica) {
             '\');"><b>refresh</b></div>';
         html += '</div>';
         html += '<div class="group">';
+
         html += button('sync', '/_sync/' + replica, true);
-        html += metric('sync status', status.sync_status, 0, 0, null, 0);
+        html += hover_help(
+            metric('sync status', status.sync_status, 0, 0, null,
+                status.sync_status.indexOf('failed') == 0 ? 1 : 0),
+            sync_status_help(status.sync_status));
+
         html += button('purge', '/_purge/' + replica, true);
-        html += metric('purge status', status.purge_status, 0, 0, null, 0);
+        html += hover_help(
+            metric('purge status', status.purge_status, 0, 0, null,
+                status.purge_status.indexOf('failed') == 0 ? 1 : 0),
+            purge_status_help(status.purge_status));
+
         html += button('buffer', '/_buffer/' + replica, true);
-        html += metric('buffer status', status.buffer_status, 0, 0, null, 0);
+        html += hover_help(
+            metric('buffer status', status.buffer_status, 0, 0, null,
+                status.buffer_status.indexOf('failed') == 0 ? 1 : 0),
+            buffer_status_help(status.buffer_status));
+
         html += '</div>';
         html += '<div class="group">';
         summary['replica events']['values'][replica] = 0;
@@ -396,7 +493,9 @@ function update_status(replica) {
         html += '</div>';
 
         html += '<div class="group">';
-        html += iterate_sorted_object(status.events, event_metrics);
+        html += hover_help(iterate_sorted_object(status.events, event_metrics),
+            'The &lt;current&gt;/&lt;max&gt;/&lt;total&gt; number of events ' +
+            'this replica has created.');
         html += '</div>';
 
         if ('index_sqlite' in status) {
@@ -415,7 +514,86 @@ function update_status(replica) {
         $('#replica_' + replica).removeClass('warning');
         update_replica_status(replica, replica_status);
         update_summary();
+        update_replica_usage(status.cluster, status.bucket);
     }
+}
+
+function sync_status_help(status) {
+    if (status.indexOf('start delay') == 0)
+        return 'Sync has not been run since server start.';
+    if (status.indexOf('failed') == 0)
+        return 'Sync failed to complete.';
+    if (status.indexOf('local checksums') == 0)
+        help = 'Sync is running and is currently computing a list of ' +
+            'checksums for this replica.';
+    else if (status.indexOf('source checksums') == 0)
+        help = 'Sync is running and is currently computing a list of ' +
+            'checksums for a peer replica.';
+    else if (status.indexOf('diff checksums') == 0)
+        help = 'Sync is running and is currently comparing a list of ' +
+            'checksums between this replica and a peer replica.';
+    else if (status.indexOf('local blobs') == 0)
+        help = 'Sync is running and is currently getting a list of blobs ' +
+            'for this replica.';
+    else if (status.indexOf('source blobs') == 0)
+        help = 'Sync is running and is currently getting a list of blobs ' +
+            'for a peer replica.';
+    else if (status.indexOf('diff blobs') == 0)
+        help = 'Sync is running and is currently comparing a list of blobs ' +
+            'between this replica and a peer replica.';
+    else if (status.indexOf('put') == 0)
+        help = 'Sync is running and is currently grabbing a blob from a ' +
+            'peer to put into this replica.';
+    else if (status.indexOf('delete') == 0)
+        help = 'Sync is running and is currently updating the delete time ' +
+            'for a blob in this replica.';
+    else if (status.indexOf('synced') == 0)
+        help = 'Sync is done running.';
+    else
+        help = 'Status of current/last sync operation.';
+    return help + ' The counts are the number of blobs skipped, put, ' +
+        'deleted, or failed for each peer.';
+}
+
+function purge_status_help(status) {
+    if (status.indexOf('start delay') == 0)
+        return 'Purge has not been run since server start.';
+    if (status.indexOf('failed') == 0)
+        return 'Purge failed to complete.';
+    if (status.indexOf('get_expired') == 0)
+        help = 'Purge is running and is currently getting a list of expired ' +
+            'blobs from the index.';
+    else if (status.indexOf('delete') == 0)
+        help = 'Purge is running and is currently deleting an expired blob ' +
+            'from disk.';
+    else if (status.indexOf('delete_expired') == 0)
+        help = 'Purge is running and is currently deleting expired blobs ' +
+            'from the index.';
+    else if (status.indexOf('purged') == 0)
+        help = 'Purge is done running.';
+    else
+        help = 'Status of current/last purge operation.';
+    return help + ' The count is the number of blobs that were purged ' +
+            'during this run.';
+}
+
+function buffer_status_help(status) {
+    if (status.indexOf('start delay') == 0)
+        return 'Buffer has not been run since server start.';
+    if (status.indexOf('failed') == 0)
+        help = 'Buffer failed to complete.';
+    if (status.indexOf('get_replica_events') == 0)
+        help = 'Buffer is running and is currently getting a list of ' +
+            'replica events from the index to buffer into memory.';
+    else if (status.indexOf('get_cluster_events') == 0)
+        help = 'Buffer is running and is currently getting a list of ' +
+            'cluster events from the index to buffer into memory.';
+    else if (status.indexOf('buffered') == 0)
+        help = 'Buffer is done running.';
+    else
+        help = 'Status of current/last buffer operation.';
+    return help + ' The counts are the number of replica/cluster events ' +
+            'that could be buffered during this run.';
 }
 
 function update_replica_status(replica, replica_status) {
@@ -428,24 +606,34 @@ function update_replica_status(replica, replica_status) {
 function index_sqlite_metrics(replica, status) {
     var html = '';
     html += metric('sqlite database', status.database);
-    html += usage_metric('sqlite size', status.max_size, status.size, 60, 80,
-        1024);
-    html += metric('sqlite queue size', status.queue_size, 10, 20);
+    html += hover_help(
+        usage_metric('sqlite size', status.max_size, status.size, 60, 80, 1024),
+        'The &lt;used&gt;/&lt;total&gt; amount of disk space for the index.');
+    html += hover_help(
+        metric('sqlite queue size', status.queue_size, 10, 20),
+        'The number of events in the index thread queue.');
     return html;
 }
 
 function store_disk_metrics(replica, status) {
     var html = '';
     html += metric('disk path', status.path);
-    html += usage_metric('disk space', status.total_space,
-        status.total_space - status.free_space, 60, 80, 1024);
+    html += hover_help(
+        usage_metric('disk space', status.total_space,
+            status.total_space - status.free_space, 60, 80, 1024),
+        'The &lt;used&gt;/&lt;total&gt; amount of disk space.');
     summary['disk space']['values'][replica] = 
         [status.total_space - status.free_space, status.total_space];
-    html += usage_metric('disk inodes', status.total_inodes,
-        status.total_inodes - status.free_inodes, 60, 80, 1000);
+    html += hover_help(
+        usage_metric('disk inodes', status.total_inodes,
+            status.total_inodes - status.free_inodes, 60, 80, 1000),
+        'The &lt;used&gt;/&lt;total&gt; number of disk inodes.');
     summary['disk inodes']['values'][replica] = 
         [status.total_inodes - status.free_inodes, status.total_inodes];
-    html += metric('disk queue size', status.queue_size, 10, 20);
+    replica_usage[replica] = status.total_inodes - status.free_inodes
+    html += hover_help(
+        metric('disk queue size', status.queue_size, 10, 20),
+        'The number of events in the disk thread queue.');
     return html;
 }
 
@@ -453,11 +641,14 @@ function replica_metrics(summary_replica) {
     return function (replica, status) {
         var html = '';
         if ('events' in status) {
-            html += metric(replica + ' events',
-                status.buffer_events + '/' + status.events,
-                config.clblob.client.replica_event_buffer_size,
-                config.clblob.client.replica_event_buffer_size * 10, 1000,
-                status.events);
+            html += hover_help(
+                metric(replica + ' events',
+                    status.buffer_events + '/' + status.events,
+                    config.clblob.client.replica_event_buffer_size,
+                    config.clblob.client.replica_event_buffer_size * 10,
+                    1000, status.events),
+                'The number of &lt;buffered&gt;/&lt;total&gt; events queued ' +
+                    'up to go to replica ' + replica + '.');
             summary['replica events']['values'][summary_replica] += status.events;
         }
         var replica_retry = config.clblob.client.replica_retry;
@@ -473,11 +664,14 @@ function cluster_metrics(replica) {
     return function (cluster, status) {
         var html = '';
         if ('events' in status) {
-            html += metric('cluster ' + cluster + ' events',
-                status.buffer_events + '/' + status.events,
-                config.clblob.client.cluster_event_buffer_size,
-                config.clblob.client.cluster_event_buffer_size * 10, 1000,
-                status.events);
+            html += hover_help(
+                metric('cluster ' + cluster + ' events',
+                    status.buffer_events + '/' + status.events,
+                    config.clblob.client.cluster_event_buffer_size,
+                    config.clblob.client.cluster_event_buffer_size * 10,
+                    1000, status.events),
+                'The number of &lt;buffered&gt;/&lt;total&gt; events queued ' +
+                    'up to go to cluster ' + cluster + '.');
             summary['cluster events']['values'][replica] += status.events;
         }
         return html;
@@ -487,7 +681,7 @@ function cluster_metrics(replica) {
 function event_metrics(event, status) {
     return metric(event + ' events',
         status.current + '/' + status.max + '/' + si_prefix(status.total), 250,
-        500, 1000, status.current)
+        500, 1000, status.current);
 }
 
 function update_status_fail(replica) {
@@ -512,8 +706,8 @@ function update_status_fail(replica) {
 
 function button(name, url, background) {
     if (background) {
-        return '<div class="button" onclick="' +
-            "$.ajax({url: '" + url + "', type: 'GET', timeout: 1000});" +
+        return '<div class="button" onclick="$.ajax(' +
+            "{url: '" + url + "', type: 'GET', timeout: replica_timeout});" +
             '"><b>' + name + '</b></div>';
     }
     return '<div class="button" onclick="' +
@@ -536,13 +730,18 @@ function usage_metric(name, total, used, warning, critical, factor) {
         critical, null, used_percent);
 }
 
+function hover_help(content, help_text) {
+    return '<span class="hover_help_wrapper">' + content +
+        '<div class="hover_help">' + help_text + '</div></span>';
+}
+
 function iterate_sorted_object(key_values, callback) {
     var keys = [];
-    for (key in key_values)
+    for (var key in key_values)
         keys.push(key);
     keys.sort();
     var html = '';
-    for (key in keys) {
+    for (var key in keys) {
         key = keys[key];
         html += callback(key, key_values[key]);
     }
@@ -611,18 +810,18 @@ function si_prefix(value, factor) {
         <div id="header">
             <h1>&#9774; craigslist blob console</h1>
             <a class="clickable" onclick="$('#help').toggleClass('hide');">
-                <b>Click here to toggle help</b>
+                <b>shortcuts</b>
+            </a> -
+            <a class="clickable" onclick="$('#by_ip').toggleClass('hide');">
+                <b>by ip</b>
             </a>
         </div>
         <div id="help" class="hide">
-            <h2>Metrics:</h2>
-            <div><b>replica &amp; cluster events</b> - &lt;buffered&gt;/&lt;total&gt;</div>
-            <div><b>other events</b> - &lt;current&gt;/&lt;max&gt;/&lt;total&gt;</div>
-            <h2>Keyboard shortcuts:</h2>
             <div><b>b</b> - Run buffer on visible replicas</div>
             <div><b>B</b> - Run buffer on all replicas</div>
             <div><b>h</b> - Hide all replicas</div>
             <div><b>H</b> - Show all replicas</div>
+            <div><b>i/I</b> - Toggle ip view</div>
             <div><b>p</b> - Run purge on visible replicas</div>
             <div><b>P</b> - Run purge on all replicas</div>
             <div><b>r or &lt;space&gt;</b> - Refresh visible replicas</div>
@@ -632,6 +831,7 @@ function si_prefix(value, factor) {
         </div>
         <div id="grid"></div>
         <div id="summary"></div>
+        <div id="by_ip" class="hide"></div>
         <div id="main"></div>
     </body>
 </html>
