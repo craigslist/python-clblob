@@ -622,13 +622,13 @@ function store_disk_metrics(replica, status) {
         usage_metric('disk space', status.total_space,
             status.total_space - status.free_space, 60, 80, 1024),
         'The &lt;used&gt;/&lt;total&gt; amount of disk space.');
-    summary['disk space']['values'][replica] = 
+    summary['disk space']['values'][status.device_id] = 
         [status.total_space - status.free_space, status.total_space];
     html += hover_help(
         usage_metric('disk inodes', status.total_inodes,
             status.total_inodes - status.free_inodes, 60, 80, 1000),
         'The &lt;used&gt;/&lt;total&gt; number of disk inodes.');
-    summary['disk inodes']['values'][replica] = 
+    summary['disk inodes']['values'][status.device_id] = 
         [status.total_inodes - status.free_inodes, status.total_inodes];
     replica_usage[replica] = status.total_inodes - status.free_inodes
     html += hover_help(

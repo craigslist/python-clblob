@@ -28,6 +28,7 @@ blobs are cleaned up the next time the store is initialized.'''
 import errno
 import hashlib
 import os.path
+import socket
 import time
 
 import clblob
@@ -254,6 +255,8 @@ class Store(object):
         status['free_space'] = vfsstat.f_bsize * vfsstat.f_bavail
         status['total_inodes'] = vfsstat.f_files
         status['free_inodes'] = vfsstat.f_favail
+        device_id = os.stat(self.config['path']).st_dev
+        status['device_id'] = '%s:%s' % (socket.gethostname(), device_id)
 
     def _name_path_parts(self, name):
         '''Get the path parts for a name.'''
